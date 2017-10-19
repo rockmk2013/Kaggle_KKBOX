@@ -1,0 +1,83 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(dplyr)
+```
+
+
+#seperate
+```{r}
+cat("Set up enviornment")
+cat("Get train/test ids")
+train <- fread("train.csv", stringsAsFactors = TRUE, select="msno")
+test <- fread("sample_submission_zero.csv", stringsAsFactors = TRUE, select="msno")
+
+allIDs <- rbind(train, test) %>% unique() #Get train and test msno
+rm(train,test);gc()
+
+
+user_col_names <- c("msno","date","num_25","num_50","num_75","num_985","num_100","num_unq","total_secs")
+
+num_outputs = 50 # Number of files that will be created
+
+nrow_size = 392106543/num_outputs # 392106543 is number of rows in user_logs.csv
+
+# new list
+distinct_user = list()
+
+for (i in 1:num_outputs) { # Should be 1:num_outputs -- Changed for successful Kaggle Kernel run
+  cat("Round",i,"-- Uploading user_logs")
+  if (i==1) {
+    users <- fread("user_logs.csv", sep=",", na.strings = "", stringsAsFactors=T, nrow=nrow_size)
+  }
+  else if (i==num_outputs) {
+    users <- fread("user_logs.csv", stringsAsFactors = TRUE, nrows=7842173,skip=((i-1)*nrow_size+1), col.names = user_col_names)
+  }
+  else {
+    users <- fread("user_logs.csv", stringsAsFactors = TRUE, nrow=nrow_size, skip=((i-1)*nrow_size+1), col.names = user_col_names)
+  }
+  cat("Reducing size of users -",i,"\n")  ##Editted below, should work fine (removed allData)
+  users <- users[users$msno %in% allIDs$msno,]
+  if(i==1){
+    final_userlog = users
+  }else{
+    final_userlog = rbind(final_userlog,users)
+  }
+  cat("Writing user logs subset -", i,"\n")
+  # write.table(users, paste0("user_logs_subset_",i,".csv"), sep=",", dec=".", quote=FALSE, row.names=FALSE)
+  rm(users) ; gc()
+}
+
+
+save(final_userlog,file="final_userlog_11_20.RData")
+```
+
+#seperate data
+```{r}
+train <- fread("train.csv")
+test <- fread("sample_submission_zero.csv")
+#make 100000 user
+final_id = distinct(dplyr::select(final_userlog, msno))
+seperate_id = final_id[sample(nrow(final_id),10000)]
+#query other data
+query_member_data = left_join(seperate_id,member_data)
+query_train = left_join(seperate_id,train)
+query_transaction_data = transaction_data[transaction_data$msno %in% seperate_id$msno ,]
+query_userlog_data = final_userlog[final_userlog$msno %in% seperate_id$msno]
+save(query_member_data,query_train,query_transaction_data,query_userlog_data,test,file="query_data.RData")
+```
+
+#save rdata
+```{r}
+save(member_data, transaction_data, train, user_log, file = "KKBOX_data.RData")
+save(distinct1_10,file = "distinct1_10.RData")
+save(distinct11_20,file = "distinct11_20.RData")
+```

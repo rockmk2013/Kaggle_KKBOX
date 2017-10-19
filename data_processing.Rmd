@@ -1,0 +1,119 @@
+---
+title: "KKBOX"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(data.table)
+```
+
+#import data
+```{r}
+member_data = read.table("members.csv",sep=",",header = TRUE)
+transaction_data = read.table("transactions.csv",sep=",",header=TRUE)
+train = read.table("train.csv",sep=",",header=TRUE)
+user_log = read.table("user_logs.csv",sep=",",header = TRUE)
+user_log = fread("user_logs.csv",nrows = 50000000)
+user_log = distinct(user_log,msno,.keep_all = T)
+```
+
+#load data
+```{r}
+load("data_record_1016.RData")
+load("distinct_userlog.RData")
+load("final_kkbox.RData")
+```
+
+#churn summary (unbalanced)
+```{r}
+prop.table(table(train$is_churn))
+train %>% ggplot(aes(is_churn))+geom_bar()
+```
+
+#member_processing
+```{r}
+#choose age 1~100
+gender_member = member_data[abs(member_data$bd) <100 & member_data$bd >0,]
+gender_member = gender_member[-which(gender_member$gender==""),]
+age_period = c()
+for (i in 1:length(gender_member$bd)) {
+    if (gender_member$bd[i]<=20) {
+      age_period[i]="0~20"
+    }else if (gender_member$bd[i]>20 & gender_member$bd[i]<=30) {
+      age_period[i]="21~30"
+    }else if (gender_member$bd[i]>30 & gender_member$bd[i]<=40) {
+      age_period[i]="31~40"
+    }else if (gender_member$bd[i]>40 & gender_member$bd[i]<=50){
+      age_period[i]="41~50"
+    }else{
+      age_period[i]="50up"
+    }  
+}
+gender_member = cbind(gender_member,age_period)
+
+gender_member = gender_member %>% mutate(datediff = ymd(expiration_date) - ymd(registration_init_time))
+#EDA
+#gender vs age
+gender_member %>% ggplot(aes(x=gender,fill=age_period))+geom_bar()
+#age vs registered way
+gender_member %>% ggplot(aes(x=age_period,fill=as.factor(registered_via)))+geom_bar()
+#city vs registered way
+gender_member %>% ggplot(aes(x=as.factor(city),fill=as.factor(registered_via)))+geom_bar()
+#age vs city
+gender_member %>% ggplot(aes(x=as.factor(city),fill=as.factor(age_period)))+geom_bar()
+```
+
+#transaction processing
+```{r}
+prop.table(table(transaction_data$is_auto_renew))
+transaction_data %>% ggplot(aes(is_auto_renew))+geom_bar()
+#0.148 vs 0.852
+prop.table(table(transaction_data$is_cancel))
+transaction_data %>% ggplot(aes(is_cancel))+geom_bar()
+#0.96 vs 0.04
+```
+
+
+#userlogs  processing
+```{r}
+songlength = data.frame(colMeans(distinct_userlog[,c(3:7)]))
+songlength = cbind(songlength,rowname)
+rowname=c("25","50","75","98.5","100")
+rowname = factor(rowname,levels=c("25","50","75","98.5","100"))
+  
+songlength %>% ggplot(aes(x=rowname,y=songlength$colMeans.distinct_userlog...c.3.7...,group=1))+geom_line(lwd=2,color='steelblue')+xlab("listen_length")+ylab("meancount")
+```
+
+#
+```{r}
+
+```
+
+#table join 
+```{r}
+console = left_join(gender_member,distinct_userlog)
+console = left_join(console,train)
+final = left_join(transaction_data,console)
+test_1 = final[sample(which(final$is_churn==1),6000),]
+test_0 = final[sample(which(final$is_churn==0),94000),]
+test = rbind(test_0,test_1)
+#rm.na
+  rm.na = c()
+  for(i in 1:nrow(test)){
+    if(length(which(is.na(test[i,]))) != 0 ){
+      rm.na = c(rm.na,i)
+    }
+  }
+  final_rm.na = test[-rm.na,]
+  save(final_rm.na,file="final_kkbox.RData")
+  load("100M_KKBOX.RData")
+```
+
+
